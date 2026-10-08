@@ -3172,6 +3172,118 @@
     </div>
   </footer>
 <!-- Interactive SPA, Calendar & Drawer JS -->
+<script>
+/* ICT Academy presentation editor. Client-side only; no backend required. */
+(function () {
+'use strict';
+const STORE = 'ict-academy-presentation-editor-v2';
+const CARD = '.sneak-card,.press-card,.training-focus-card,.training-program-card,.training-activity-card,.about-us-card,.content-box,.facility-stat-card';
+const GRIDS = '.cards-grid,.press-releases-grid,.training-focus-grid,.training-program-grid,.training-activity-grid,.about-us-grid,.facility-stats-grid';
+let enabled = false, selected = null, lastText = null, dirty = false;
+const $ = id => document.getElementById(id);
+function el(tag, attrs={}, html=''){let e=document.createElement(tag); Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v)); e.innerHTML=html;return e;}
+const css = `
+#present-edit-tab{position:fixed;right:18px;bottom:20px;z-index:6000;border:0;border-radius:14px;background:#184591;color:white;padding:14px 19px;box-shadow:0 12px 32px #10294b55;font:700 14px Inter,Arial;cursor:pointer}
+#present-edit-panel{position:fixed;right:18px;top:105px;bottom:84px;width:315px;overflow-y:auto;z-index:6000;background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 20px 55px #0f172a40;font:13px Inter,Arial;color:#17243a;padding:17px;display:none}
+body.presentation-editing #present-edit-panel{display:block}
+#present-edit-panel h3{font-size:17px;margin:0 0 7px;color:#184591}#present-edit-panel p{font-size:12px;color:#64748b;line-height:1.6;margin:6px 0 13px}
+#present-edit-panel .edit-label{display:block;font-size:11px;font-weight:800;color:#475569;margin:13px 0 5px;letter-spacing:.02em}
+#present-edit-panel input,#present-edit-panel textarea,#present-edit-panel select{width:100%;font:13px Inter,Arial;border:1px solid #cbd5e1;border-radius:9px;padding:10px;color:#17243a;background:#fff}
+#present-edit-panel textarea{min-height:72px;resize:vertical}#present-edit-panel .edit-row{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+#present-edit-panel button{border:1px solid #cbd5e1;border-radius:9px;background:#f8fafc;padding:9px 8px;font:700 12px Inter,Arial;cursor:pointer;color:#243d60}
+#present-edit-panel button:hover{background:#eaf1ff}#present-edit-panel button.edit-primary{background:#184591;border-color:#184591;color:#fff}
+#present-edit-panel button.edit-danger{color:#b91c1c;background:#fff5f5;border-color:#fecaca}
+#present-edit-panel hr{border:0;border-top:1px solid #e2e8f0;margin:14px 0}
+#present-edit-panel .edit-help{background:#f1f5ff;border-radius:9px;padding:9px 11px;font-size:11px;line-height:1.5}
+body.presentation-editing .page-section .editable,body.presentation-editing .gov-topbar .editable,body.presentation-editing .navbar .editable,body.presentation-editing footer .editable{outline:1px dashed #60a5fa90;outline-offset:3px;cursor:text}
+body.presentation-editing .presentation-selected{outline:3px solid #2563eb!important;outline-offset:4px!important;position:relative}
+body.presentation-editing .presentation-text-selected{outline:2px solid #22a0ff!important;outline-offset:3px!important}
+body.presentation-editing [contenteditable=true]{cursor:text!important;min-width:16px}
+#present-edit-toast{position:fixed;bottom:82px;right:20px;z-index:6100;background:#152952;color:white;border-radius:9px;padding:9px 14px;display:none;font:12px Inter,Arial}
+@media(max-width:700px){#present-edit-panel{left:8px;right:8px;top:auto;bottom:75px;width:auto;max-height:60vh}#present-edit-tab{right:10px;bottom:10px}}
+`;
+document.head.appendChild(el('style',{'id':'presentation-editor-css'},css));
+const tab=el('button',{id:'present-edit-tab',type:'button'},'<i class="fa-solid fa-pen-to-square"></i> Edit Mode');document.body.appendChild(tab);
+const panel=el('aside',{id:'present-edit-panel','aria-label':'Presentation editing controls'},`
+<h3><i class="fa-solid fa-sliders"></i> Presentation Editor</h3><p>Click text, a card, or an icon on the visible page to select it. Edits are for this prototype.</p>
+<div class="edit-help" id="edit-selection">Nothing selected. Click an item on the page.</div>
+<label class="edit-label" for="edit-copy">Selected text / heading</label><textarea id="edit-copy" placeholder="Select a heading or paragraph first"></textarea>
+<div class="edit-row"><button id="edit-apply-text" class="edit-primary">Apply Text</button><button id="edit-apply-icon">Change Icon</button></div>
+<label class="edit-label" for="edit-icon-choice">Icon (Font Awesome)</label><select id="edit-icon-choice"><option value="fa-graduation-cap">Graduation cap</option><option value="fa-laptop-code">Laptop</option><option value="fa-book-open">Book</option><option value="fa-users">People</option><option value="fa-certificate">Certificate</option><option value="fa-shield-halved">Cybersecurity</option><option value="fa-brain">AI / Brain</option><option value="fa-building">Building</option><option value="fa-globe">Globe</option><option value="fa-calendar-days">Calendar</option><option value="fa-bullhorn">Announcement</option><option value="fa-chart-line">Chart</option><option value="fa-handshake">Partnership</option><option value="fa-star">Star</option><option value="fa-gear">Settings</option><option value="fa-location-dot">Location</option></select>
+<hr><label class="edit-label">Add components to current page</label><select id="edit-insert-type"><option value="feature">Feature card</option><option value="news">News card</option><option value="focus">Icon card</option><option value="field">Text / information field</option><option value="heading">Section heading</option><option value="button">Button / link</option></select>
+<div class="edit-row"><button id="edit-add" class="edit-primary"><i class="fa-solid fa-plus"></i> Add Element</button><button id="edit-duplicate"><i class="fa-solid fa-copy"></i> Duplicate</button></div>
+<div class="edit-row"><button id="edit-move-up">Move Up</button><button id="edit-move-down">Move Down</button></div><div class="edit-row"><button id="edit-remove" class="edit-danger">Delete Selected</button><button id="edit-image">Image URL</button></div>
+<hr><p id="edit-autosave" style="font-size:12px;color:#167348;font-weight:700;margin:4px 0 8px">✓ Autosave enabled</p><div class="edit-row"><button id="edit-save" class="edit-primary"><i class="fa-solid fa-floppy-disk"></i> Save Locally</button><button id="edit-export" class="edit-primary"><i class="fa-solid fa-download"></i> Export HTML</button></div>
+<div class="edit-row"><button id="edit-reset" class="edit-danger">Reset Changes</button><button id="edit-close">Done / Preview</button></div>
+<p>Changes autosave in this browser after a brief pause. <strong>Export HTML</strong> creates a portable file containing your edits. Work from the exported file for your next presentation.</p>
+`);document.body.appendChild(panel);
+const toast = el('div',{id:'present-edit-toast','role':'status'});document.body.appendChild(toast);
+function notify(s){toast.textContent=s;toast.style.display='block';clearTimeout(notify.t);notify.t=setTimeout(()=>toast.style.display='none',2600)}
+function root(){return document.querySelector('.page-section.active-page')||document.querySelector('.page-section')||document.body}
+function candidates(){return document.querySelectorAll('.editable,.page-section h1,.page-section h2,.page-section h3,.page-section h4,.page-section h5,.page-section p,.page-section li,.page-section .training-card-subhead,.navbar .nav-link,.gov-topbar .editable');}
+function assignKeys(){let n=0;candidates().forEach(item=>{if(item.closest('#present-edit-panel'))return;if(!item.dataset.peKey)item.dataset.peKey='text-'+(++n);});document.querySelectorAll(GRIDS).forEach((g,i)=>{if(!g.dataset.peGrid)g.dataset.peGrid='grid-'+i;});}
+function textValue(node){if(!node)return '';if(node.matches('i'))return '';return node.innerText||node.textContent||'';}
+function choose(target){if(selected)selected.classList.remove('presentation-selected','presentation-text-selected');selected=target;lastText=null;
+if(!target){$('edit-selection').textContent='Nothing selected. Click an item on the page.';$('edit-copy').value='';return}
+const card=target.closest(CARD);const icon=target.matches('i')?target: null;
+if(icon){selected=icon;icon.classList.add('presentation-selected');lastText=icon.parentElement.querySelector('.editable')||icon.parentElement;}
+else if(target.matches('.editable,h1,h2,h3,h4,h5,p,li,.nav-link,.training-card-subhead')){lastText=target;target.classList.add('presentation-text-selected');}
+else if(card){selected=card;card.classList.add('presentation-selected');lastText=card.querySelector('.editable,h2,h3,h4,p');}
+else target.classList.add('presentation-selected');
+$('edit-selection').textContent=icon?'Icon selected':card?'Card / section selected':'Text selected';$('edit-copy').value=textValue(lastText);
+}
+function getContentNode(){return lastText|| (selected&&selected.matches('.editable,h1,h2,h3,h4,p,li')?selected:null)}
+function setText(node,text){if(!node)return;let hasElement=node.querySelector('i,svg,a,strong,span');if(hasElement){let txt=[...node.childNodes].find(n=>n.nodeType===3&&n.textContent.trim());if(txt){txt.textContent=' '+text;return;}const editable=node.querySelector('.editable');if(editable){editable.textContent=text;return;} }node.textContent=text;}
+function applyText(){let target=getContentNode();if(!target)return notify('Select a heading, paragraph or card first.');setText(target,$('edit-copy').value);dirty=true;notify('Text updated.');}
+function activeSection(){return root().querySelector('.container')||root();}
+function addComponent(){const type=$('edit-insert-type').value;const area=root();let grid, item;
+if(type==='field'||type==='heading'||type==='button'){
+ const box=selected?.closest('.card-body,.content-box,.training-program-body,.about-card-content')||activeSection();
+ if(type==='field')item=el('p',{class:'editable presentation-added'},'New information field. Click to edit this text.');
+ if(type==='heading')item=el('h3',{class:'editable presentation-added'},'New Section Heading');
+ if(type==='button')item=el('a',{class:'btn-3d presentation-added',href:'#'},'<span class="editable">New Button</span>');
+ box.appendChild(item);
+}else{
+ const klass=type==='news'?'press-releases-grid':type==='focus'?'training-focus-grid':'cards-grid';
+ grid=(selected?.closest(GRIDS))||area.querySelector('.'+klass);
+ if(!grid||!grid.classList.contains(klass)){grid=el('div',{class:klass+' presentation-added-grid'});activeSection().appendChild(grid);}
+ if(type==='news')item=el('div',{class:'press-card presentation-added'},'<div class="press-content"><div class="press-date editable">October 2026</div><h3 class="press-title editable">New Announcement</h3><p class="press-excerpt editable">Add your announcement description here.</p><a href="#" class="press-link"><span class="editable">Read More</span> <i class="fa-solid fa-arrow-right"></i></a></div>');
+ else if(type==='focus')item=el('article',{class:'training-focus-card presentation-added'},'<i class="fa-solid fa-graduation-cap"></i><h4 class="editable">New Topic</h4><p class="editable">Add topic details here.</p>');
+ else item=el('div',{class:'sneak-card presentation-added'},'<div class="card-body"><h3 class="editable"><i class="fa-solid fa-book-open"></i> New Service</h3><p class="editable">Click here to describe the new service.</p><a href="#" class="card-link"><span class="editable">Learn More</span> <i class="fa-solid fa-arrow-right"></i></a></div>');
+ grid.appendChild(item);
+}
+assignKeys();choose(item);dirty=true;item.scrollIntoView({behavior:'smooth',block:'center'});notify('Element added. Select its text to edit.');}
+function editIcon(){const base=selected?.matches('i')?selected:selected?.querySelector('i.fa-solid')||selected?.closest(CARD)?.querySelector('i.fa-solid');if(!base)return notify('Choose an icon or card first.');[...base.classList].filter(c=>c.startsWith('fa-')&&c!=='fa-solid').forEach(c=>base.classList.remove(c));base.classList.add($('edit-icon-choice').value);dirty=true;notify('Icon updated.');}
+function getMovable(){return selected?.closest(CARD)||selected?.closest('.presentation-added')||selected;}
+function duplicate(){let src=getMovable();if(!src||!src.parentElement||src===document.body)return notify('Select a card or a field.');let x=src.cloneNode(true);x.removeAttribute('data-pe-key');x.querySelectorAll('[data-pe-key]').forEach(n=>n.removeAttribute('data-pe-key'));x.classList.add('presentation-added');src.after(x);assignKeys();choose(x);dirty=true;notify('Element duplicated.');}
+function move(dir){let x=getMovable();if(!x?.parentNode)return notify('Select an element first.');if(dir<0&&x.previousElementSibling)x.parentNode.insertBefore(x,x.previousElementSibling);if(dir>0&&x.nextElementSibling)x.parentNode.insertBefore(x.nextElementSibling,x);dirty=true;notify('Element moved.');}
+function remove(){let x=getMovable();if(!x||x.matches('.page-section,.container,body,html'))return notify('Select a removable item.');if(!confirm('Delete selected element from this prototype?'))return;x.remove();choose(null);dirty=true;notify('Element deleted.');}
+function image(){let target=selected?.closest(CARD)?.querySelector('img')||selected?.querySelector?.('img')||selected?.closest(CARD)?.querySelector('.press-img')||selected?.closest('.carousel-slide')||selected?.querySelector?.('.training-program-photo img');if(!target)return notify('Select a card containing an image first.');let u=prompt('Image URL (https://... or data:image/...)',target.tagName==='IMG'?target.getAttribute('src')||'':target.style.backgroundImage.replace(/^url\(["']?|["']?\)$/g,''));if(u===null)return;if(!/^https?:\/\/|^data:image\//i.test(u))return notify('Please enter an image URL or data:image URL.');if(target.tagName==='IMG')target.src=u;else target.style.backgroundImage=`url("${u.replace(/"/g,'%22')}")`;dirty=true;notify('Image updated.');}
+function collect(){// Save editable page markup; dynamic sections are excluded because their data-driven JS will render them.
+let sections={};document.querySelectorAll('.page-section').forEach(s=>{let c=s.cloneNode(true);c.querySelectorAll('[contenteditable]').forEach(e=>e.removeAttribute('contenteditable'));c.querySelectorAll('.presentation-selected,.presentation-text-selected').forEach(e=>e.classList.remove('presentation-selected','presentation-text-selected'));const dynamic=['facilityCardGrid','calendarGrid','facilityPagination','facilityModalFacts','facilityModalServices','facilityModalContact'];dynamic.forEach(id=>{let x=c.querySelector('#'+id);if(x)x.innerHTML='';});sections[s.id]=c.innerHTML;});return {sections,version:2};}
+let autosaveTimer=null;
+function markDirty(){dirty=true;const indicator=$('edit-autosave');if(indicator)indicator.textContent='Unsaved changes…';clearTimeout(autosaveTimer);autosaveTimer=setTimeout(()=>save(true),650);}
+function save(silent=false){clearTimeout(autosaveTimer);try{localStorage.setItem(STORE,JSON.stringify(collect()));dirty=false;const indicator=$('edit-autosave');if(indicator)indicator.textContent='✓ Saved automatically in this browser';if(!silent)notify('Saved in this browser. Export HTML to share edits.');}catch(e){const indicator=$('edit-autosave');if(indicator)indicator.textContent='⚠ Browser storage unavailable. Export HTML.';if(!silent)notify('Local save unavailable. Use Export HTML.');}}
+function restore(data){if(!data||!data.sections)return;Object.entries(data.sections).forEach(([id,html])=>{let s=$(id);if(s&&typeof html==='string')s.innerHTML=html;});assignKeys();}
+function exportHTML(){// Snapshot present DOM with editor code retained. Inline content is portable; no server needed.
+const old=enabled;if(old)setMode(false);let snapshot=collect();let doc=document.documentElement.cloneNode(true);
+doc.querySelectorAll('#present-edit-tab,#present-edit-panel,#present-edit-toast,#presentation-editor-css').forEach(n=>n.remove());
+let baked=doc.querySelector('#presentation-editor-data');if(!baked){baked=document.createElement('script');baked.id='presentation-editor-data';baked.type='application/json';doc.querySelector('body').appendChild(baked);}
+baked.textContent=JSON.stringify(snapshot).replace(/</g,'\\u003c');
+let blob=new Blob(['<!DOCTYPE html>\n'+doc.outerHTML],{type:'text/html;charset=utf-8'});let u=URL.createObjectURL(blob);let a=document.createElement('a');a.href=u;a.download='ICT_Academy_Editable_Presentation.html';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),12000);if(old)setMode(true);dirty=false;notify('Editable HTML exported.');}
+function setMode(value){enabled=value;document.body.classList.toggle('presentation-editing',enabled);tab.innerHTML=enabled?'<i class="fa-solid fa-eye"></i> Preview Mode':'<i class="fa-solid fa-pen-to-square"></i> Edit Mode';if(!enabled){document.querySelectorAll('[contenteditable]').forEach(n=>n.removeAttribute('contenteditable'));if(selected)selected.classList.remove('presentation-selected','presentation-text-selected');selected=null;lastText=null;}}
+tab.addEventListener('click',()=>setMode(!enabled));$('edit-close').onclick=()=>setMode(false);$('edit-add').onclick=addComponent;$('edit-apply-text').onclick=applyText;$('edit-apply-icon').onclick=editIcon;$('edit-duplicate').onclick=duplicate;$('edit-move-up').onclick=()=>move(-1);$('edit-move-down').onclick=()=>move(1);$('edit-remove').onclick=remove;$('edit-image').onclick=image;$('edit-save').onclick=()=>save(false);$('edit-export').onclick=exportHTML;
+$('edit-reset').onclick=()=>{if(!confirm('Clear locally saved changes and reload the original page?'))return;localStorage.removeItem(STORE);location.reload();};
+document.addEventListener('click',e=>{if(!enabled||e.target.closest('#present-edit-panel,#present-edit-tab,#present-edit-toast'))return;let t=e.target;
+if(t.closest('.page-section,.navbar,.gov-topbar,footer')){e.preventDefault();e.stopPropagation();let icon=t.closest('i.fa-solid');let target=icon||t.closest('.editable,h1,h2,h3,h4,h5,p,li,.nav-link,.training-card-subhead')||t.closest(CARD);if(target)choose(target);}},true);
+document.addEventListener('dblclick',e=>{if(!enabled)return;let t=e.target.closest('.editable,h1,h2,h3,h4,h5,p,li');if(!t||t.querySelector('i,svg,a,button,input,select,textarea'))return;t.setAttribute('contenteditable','true');t.focus();choose(t);},true);
+document.addEventListener('input',e=>{if(enabled&&e.target.hasAttribute('contenteditable')){markDirty();$('edit-copy').value=textValue(e.target);}},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&enabled){document.activeElement?.blur();choose(null);}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'&&enabled){e.preventDefault();save();}},true);
+window.addEventListener('beforeunload',e=>{if(dirty){save(true);if(dirty){e.preventDefault();e.returnValue='';}}});
+window.addEventListener('DOMContentLoaded',()=>{let baked=$('presentation-editor-data');try{if(baked?.textContent)restore(JSON.parse(baked.textContent));let saved=localStorage.getItem(STORE);if(saved)restore(JSON.parse(saved));}catch(e){console.warn('Presentation edits could not be restored.',e);}assignKeys();});
+})();
+
+</script>
   <script>
     /* CERTIFICATION TAB SWITCHING */
     function switchCertTab(tabId, btnElement) {
